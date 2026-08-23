@@ -81,6 +81,34 @@ class AlreadyRunning(SystemExit):
     pass
 
 
+def _is_our_process(pid) -> bool:
+    """Is `pid` a live fertprec run, rather than a recycled number?
+
+    After a hard reset the lock file outlives the process that wrote it, and
+    the kernel will eventually hand that PID to something unrelated. Checking
+    only that the PID exists would then refuse to resume for no reason, on a
+    machine that has to be reset from time to time. So check what the process
+    actually is.
+    """
+    import os
+
+    if pid is None:
+        return False
+    try:
+        os.kill(pid, 0)
+    except (ProcessLookupError, TypeError, ValueError):
+        return False
+    except PermissionError:
+        return True          # exists, owned by someone else -- assume live
+    cmdline = pathlib.Path(f"/proc/{pid}/cmdline")
+    if cmdline.exists():      # Linux: confirm identity, not just existence
+        try:
+            return b"fertprec" in cmdline.read_bytes()
+        except OSError:
+            return True
+    return True               # no /proc (macOS): fall back to existence
+
+
 def acquire_lock(out: pathlib.Path, steps: list[int]) -> pathlib.Path:
     """Refuse to start if another process is writing the same cells.
 
@@ -101,11 +129,7 @@ def acquire_lock(out: pathlib.Path, steps: list[int]) -> pathlib.Path:
         except (json.JSONDecodeError, OSError):
             held = None
         if held:
-            alive = True
-            try:
-                os.kill(held["pid"], 0)
-            except (ProcessLookupError, PermissionError, TypeError):
-                alive = held.get("pid") is None
+            alive = _is_our_process(held.get("pid"))
             overlap = sorted(set(held.get("steps", [])) & set(steps))
             if alive and overlap:
                 raise AlreadyRunning(
@@ -161,6 +185,14 @@ def run(out: pathlib.Path, steps=None, bits=BITS, eval_sets=EVAL_SETS,
 
     t0 = time.time()
     lock = acquire_lock(out, list(steps or checkpoints.STEPS))
+    # A killed run leaves a half-written quantized model behind; each is 3-5 GB
+    # and they accumulate silently until the disk fills mid-ladder.
+    stale = out.parent / "_quant"
+    if stale.exists():
+        freed = sum(f.stat().st_size for f in stale.rglob("*") if f.is_file())
+        if freed:
+            shutil.rmtree(stale, ignore_errors=True)
+            print(f"cleared {freed / 2**30:.1f} GiB of scratch from a previous run")
     done = load_done(out)
     prov = provenance.collect()
     # Re-read thermal state per checkpoint rather than once per run: a ladder

@@ -231,3 +231,29 @@ def test_meta_tensors_are_refused_not_emptied():
         assert "to_empty" in str(exc)
     else:
         raise AssertionError("meta tensors must be refused")
+
+
+def test_lock_from_a_recycled_pid_does_not_block_resume(tmp_path, monkeypatch):
+    """After a hard reset the lock outlives its process and the PID gets
+    reused. Refusing to resume then would be wrong on a machine that has to be
+    rebooted."""
+    import json as _json
+    out = tmp_path / "k6.jsonl"
+    lock = out.with_suffix(out.suffix + ".lock")
+    lock.write_text(_json.dumps({"pid": 4242, "steps": [70000]}))
+    monkeypatch.setattr(k6, "_is_our_process", lambda pid: False)
+    k6.acquire_lock(out, [70000])          # must not raise
+
+
+def test_lock_blocks_while_a_real_run_holds_it(tmp_path, monkeypatch):
+    import json as _json
+    out = tmp_path / "k6.jsonl"
+    lock = out.with_suffix(out.suffix + ".lock")
+    lock.write_text(_json.dumps({"pid": 4242, "steps": [70000]}))
+    monkeypatch.setattr(k6, "_is_our_process", lambda pid: True)
+    try:
+        k6.acquire_lock(out, [70000])
+    except SystemExit:
+        pass
+    else:
+        raise AssertionError("a live run must still block")
