@@ -102,3 +102,57 @@ def test_plan_is_the_frozen_ladder():
     assert len(cells) == 8 * 2 * 2
     assert sorted({c.step for c in cells}) == [70000, 108000, 165000, 254000,
                                                390000, 599000, 920000, 1413814]
+
+
+# --- GPU selection -----------------------------------------------------------
+# A small auxiliary card visible to the process is not a performance problem,
+# it is a validity problem: the backend OOMs there and falls back to CPU for
+# part of the model, so layers within one checkpoint stop being comparable.
+
+from fertprec import gpu as gpumod  # noqa: E402
+
+
+def _gpus(monkeypatch, spec):
+    monkeypatch.setattr(gpumod, "list_gpus",
+                        lambda: [gpumod.Gpu(i, n, t, f) for i, n, t, f in spec])
+
+
+def test_auto_never_picks_a_small_card(monkeypatch):
+    _gpus(monkeypatch, [(0, "A6000", 48.0, 10.0), (1, "A6000", 48.0, 47.0),
+                        (2, "small", 3.6, 3.5)])
+    assert gpumod.pick("auto") == 1          # emptiest card that is big enough
+
+
+def test_explicit_small_card_is_refused(monkeypatch):
+    _gpus(monkeypatch, [(0, "A6000", 48.0, 47.0), (2, "small", 3.6, 3.5)])
+    try:
+        gpumod.pick(2)
+    except SystemExit as exc:
+        assert "3.6" in str(exc)
+    else:
+        raise AssertionError("picking a 3.6 GiB card should be refused")
+
+
+def test_all_small_is_refused(monkeypatch):
+    _gpus(monkeypatch, [(0, "small", 3.6, 3.5)])
+    try:
+        gpumod.pick("auto")
+    except SystemExit:
+        pass
+    else:
+        raise AssertionError("should refuse when no card is large enough")
+
+
+def test_no_nvidia_smi_leaves_environment_alone(monkeypatch):
+    monkeypatch.setattr(gpumod, "list_gpus", list)
+    assert gpumod.pick("auto") is None
+
+
+def test_unknown_index_is_refused(monkeypatch):
+    _gpus(monkeypatch, [(0, "A6000", 48.0, 47.0)])
+    try:
+        gpumod.pick(7)
+    except SystemExit as exc:
+        assert "not found" in str(exc)
+    else:
+        raise AssertionError("unknown index should be refused")

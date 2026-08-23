@@ -37,42 +37,23 @@ def doctor() -> int:
             print(f"  MISSING {mod:<16} {type(exc).__name__}: {exc}"
                   + (f"  ({note})" if note else ""))
 
-    try:
-        import torch
-        MIN_GIB = 20.0
-        if torch.cuda.is_available():
-            small = []
-            for i in range(torch.cuda.device_count()):
-                free, total = torch.cuda.mem_get_info(i)
-                tot_gib = total / 2**30
-                mark = "" if tot_gib >= MIN_GIB else "   <-- TOO SMALL"
-                print(f"  gpu {i}: {torch.cuda.get_device_name(i)} "
-                      f"{free/2**30:.1f}/{tot_gib:.1f} GiB free{mark}")
-                if tot_gib < MIN_GIB:
-                    small.append(i)
-            if small:
-                ok = False
-                print(f"\n  gpu {small} are below {MIN_GIB:.0f} GiB and are visible to "
-                      f"this process.\n"
-                      "  The quantization backend spreads the model across every "
-                      "visible device,\n"
-                      "  runs out of memory on the small one, and silently falls "
-                      "back to CPU for\n"
-                      "  the Hessian inverse. That is not just slow: some layers "
-                      "then get a\n"
-                      "  CPU-computed inverse and others a GPU one, within the same "
-                      "model, and\n"
-                      "  which layers depends on where the OOM happened. Across a "
-                      "ladder of\n"
-                      "  checkpoints that is a confound sitting directly on the "
-                      "measurement.\n"
-                      "  Restrict the process, e.g. CUDA_VISIBLE_DEVICES=0")
-        else:
-            print("  no CUDA device visible -- the ladder needs one")
-            ok = False
-    except Exception as exc:
-        print(f"  gpu check failed: {exc}")
+    from . import gpu as gpumod
+
+    gpus = gpumod.list_gpus()
+    if not gpus:
+        print("  no GPU reported by nvidia-smi -- the ladder needs one")
         ok = False
+    else:
+        for g in gpus:
+            mark = "" if g.usable else "   <-- too small, must not be visible"
+            print(f"  gpu {g.index}: {g.name} "
+                  f"{g.free_gib:.1f}/{g.total_gib:.1f} GiB free{mark}")
+        usable = [g.index for g in gpus if g.usable]
+        if not usable:
+            ok = False
+            print(f"\n  no card has the {gpumod.MIN_GIB:.0f} GiB this needs")
+        else:
+            print(f"\n  will pin to one of {usable}; pass --gpu N to choose")
 
     print("\nready" if ok else "\nnot ready -- fix the above before running k6")
     return 0 if ok else 1
@@ -90,6 +71,10 @@ def main(argv: list[str] | None = None) -> int:
     k6.add_argument("--max-windows", type=int, default=None,
                     help="cap windows per eval set (smoke runs only)")
     k6.add_argument("--device", default="cuda")
+    k6.add_argument("--gpu", default="auto",
+                    help="CUDA index to pin to, or 'auto' for the emptiest "
+                         "card with enough memory, or 'off' to leave "
+                         "CUDA_VISIBLE_DEVICES alone")
     k6.add_argument("--dry-run", action="store_true")
     k6.add_argument("--verify", action="store_true",
                     help="check every frozen branch still exists, then exit")
@@ -117,6 +102,16 @@ def main(argv: list[str] | None = None) -> int:
         for step, ok in avail.items():
             print(f"  step {step}: {'ok' if ok else 'MISSING'}")
         return 0 if all(avail.values()) else 1
+
+    # Pin before torch is imported anywhere: CUDA_VISIBLE_DEVICES has no
+    # effect once CUDA is initialised, and leaving a small auxiliary card
+    # visible makes the backend OOM there and fall back to CPU mid-model.
+    if args.gpu != "off":
+        from . import gpu as gpumod
+        chosen = gpumod.pick(args.gpu)
+        if chosen is not None:
+            gpumod.restrict_to(chosen)
+            print(f"pinned to cuda:{chosen} (CUDA_VISIBLE_DEVICES={chosen})")
 
     steps = [int(s) for s in args.steps.split(",") if s] or None
     bits = tuple(int(b) for b in args.bits.split(","))

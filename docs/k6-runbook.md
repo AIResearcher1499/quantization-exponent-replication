@@ -74,9 +74,13 @@ with `nvidia-smi`, then pin.
 The cells are independent per checkpoint, so split the ladder:
 
 ```bash
-CUDA_VISIBLE_DEVICES=0 uv run fertprec k6 --steps 70000,108000,165000,254000 &
-CUDA_VISIBLE_DEVICES=1 uv run fertprec k6 --steps 390000,599000,920000,1413814 &
+uv run fertprec k6 --gpu 0 --steps 70000,108000,165000,254000 &
+uv run fertprec k6 --gpu 1 --steps 390000,599000,920000,1413814 &
 ```
+
+`--gpu N` pins the process before torch initialises CUDA, so only that card is
+visible and the backend cannot spill onto another. `--gpu auto` (the default)
+picks the emptiest card that is large enough and refuses to run if none is.
 
 Both write to `data/k6.jsonl` by append, which is safe for line-sized writes.
 Nothing here is scored on wall-clock, so contention between the two processes

@@ -46,9 +46,12 @@ uv run fertprec k6 --dry-run  # what would run, what is cached
 # smoke, to a separate file:
 uv run fertprec k6 --steps 70000 --bits 4 --eval-sets wikitext2 \
                    --max-windows 8 --out data/k6_smoke.jsonl
-uv run fertprec k6 --out data/k6.jsonl
+uv run fertprec k6 --gpu 0 --out data/k6.jsonl
 uv run fertprec analyse --out data/k6.jsonl
 ```
+
+`--gpu` defaults to `auto`, which takes the emptiest card with enough memory.
+Pass an explicit index to split the ladder across two cards.
 
 The run is resumable: rows are appended and a restart skips what is already
 present. Killing a job loses at most the checkpoint in progress.
@@ -68,10 +71,12 @@ present. Killing a job loses at most the checkpoint in progress.
   spreads the model across every *visible* CUDA device. If a small GPU is
   visible it will OOM there and fall back to CPU for the Hessian inverse, which
   is not merely slow: layers then differ in how they were quantized, within one
-  model, depending on where the OOM landed. Always pin the process with
-  `CUDA_VISIBLE_DEVICES` to a single large card, and run `fertprec doctor`
-  first -- it refuses to report ready while a sub-20 GiB device is visible.
-  Any run that logged a CPU fallback must be discarded, not resumed.
+  model, depending on where the OOM landed. `--gpu N` (default `auto`) pins the
+  process to one large card before torch initialises CUDA, so the backend
+  cannot spill onto another; a card below 20 GiB is refused outright rather
+  than used. `fertprec doctor` lists every card and says which are usable.
+  **Any run that logged a CPU fallback must be discarded, not resumed** -- its
+  layers were not all quantized the same way.
 - **Disk fills.** Each revision is a full 7B checkpoint; the ladder pulls
   ~110 GB. Clear the Hub cache between checkpoints if needed — the results file
   is what matters, not the weights.
