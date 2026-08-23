@@ -41,9 +41,27 @@ def build_calibration(tokenizer, n: int = CALIB_N, seq_len: int = CALIB_SEQ,
     return samples
 
 
-def quantize_gptq(model_id: str, revision: str, bits: int, calib: list[dict],
+def snapshot(model_id: str, revision: str) -> str:
+    """Download one revision to the local cache and return its path.
+
+    Both halves of a comparison then load from the *same directory* rather than
+    resolving a branch name twice. That removes a real hazard -- a branch
+    resolving differently between the BF16 and quantized loads would be
+    indistinguishable from the effect under test -- and it sidesteps backends
+    that forward unknown kwargs like `revision` into the model constructor.
+    """
+    from huggingface_hub import snapshot_download
+
+    return snapshot_download(repo_id=model_id, revision=revision)
+
+
+def quantize_gptq(local_path: str, bits: int, calib: list[dict],
                   group_size: int = 128, out_dir: str | None = None):
     """Quantize one checkpoint and return the loaded quantized model.
+
+    Takes a local path, not a repo id plus revision: `GPTQModel.load` forwards
+    unknown keyword arguments to the model constructor, and
+    `Olmo3ForCausalLM` rejects `revision`.
 
     `gptqmodel` is the maintained successor to auto-gptq and is the only backend
     supported here. Pin its version and record it in provenance: INT3 support in
@@ -55,8 +73,7 @@ def quantize_gptq(model_id: str, revision: str, bits: int, calib: list[dict],
 
     cfg = QuantizeConfig(bits=bits, group_size=group_size, desc_act=True,
                          sym=True)
-    model = GPTQModel.load(model_id, cfg, revision=revision,
-                           trust_remote_code=True)
+    model = GPTQModel.load(local_path, cfg, trust_remote_code=True)
     model.quantize(calib)
     if out_dir:
         model.save(out_dir)

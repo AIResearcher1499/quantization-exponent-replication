@@ -115,8 +115,12 @@ def run(out: pathlib.Path, steps=None, bits=BITS, eval_sets=EVAL_SETS,
         rev = checkpoints.revision(step)
         print(f"\n=== step {step} ({rev})", flush=True)
 
+        # One local snapshot per checkpoint, shared by the BF16 and quantized
+        # loads, so both are provably the same weights.
+        local = quantize.snapshot(model_id, rev)
+
         base = AutoModelForCausalLM.from_pretrained(
-            model_id, revision=rev, torch_dtype=torch.bfloat16,
+            local, torch_dtype=torch.bfloat16,
             device_map=device, trust_remote_code=True)
         bf16 = {e: ppl.perplexity(base, windows[e], device=device)
                 for e in windows}
@@ -130,7 +134,7 @@ def run(out: pathlib.Path, steps=None, bits=BITS, eval_sets=EVAL_SETS,
             if calib is None:
                 calib = quantize.build_calibration(tok)
                 print(f"  calibration: {len(calib)} sequences", flush=True)
-            qmodel = quantize.quantize_gptq(model_id, rev, b, calib)
+            qmodel = quantize.quantize_gptq(local, b, calib)
             for e in windows:
                 cell = Cell(step=step, bits=b, eval_set=e)
                 if cell.key() in done:
