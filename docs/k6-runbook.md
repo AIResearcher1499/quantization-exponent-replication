@@ -35,18 +35,21 @@ and expensive eight hours in. `doctor` in particular catches lazily-resolved
 imports -- `transformers` pulls in torchvision on some paths even for text-only
 models, and that error would otherwise surface only after a 14 GB download.
 
-## Smoke first
+## There is no cheap smoke run
 
-```bash
-uv run fertprec k6 --steps 70000 --bits 4 --eval-sets wikitext2 \
-                   --max-windows 8 --out data/k6_smoke.jsonl
-```
+`--max-windows` only shortens the perplexity pass, which takes seconds. GPTQ
+still runs all 32 layers, and that is essentially the whole cost. A "smoke run"
+here is a full quantization that throws its result away.
 
-Exercises the whole stack — Hub revision download, BF16 load, calibration
-build, GPTQ, perplexity — in minutes rather than hours. **Write smoke output to
-a different file**: `--max-windows` changes the number, and although the resume
-key does not include it, a smoke row in the real file would still be a row
-measured on 8 windows sitting beside rows measured on hundreds.
+So do not run one. `doctor` and `--verify` cover what can be checked cheaply
+(imports, GPU visibility, branches still on the Hub); everything after that is
+paid in full either way. Start the real ladder and treat the first checkpoint
+as the smoke test — the run is resumable, and its result is kept instead of
+discarded.
+
+If you do want an isolated single cell for some other reason, send it to a
+different file: `--max-windows` changes the number without changing the resume
+key, so such a row must never sit in `data/k6.jsonl` beside full ones.
 
 ## Full run
 

@@ -19,9 +19,12 @@ fitted on? It answers that and nothing else. Do not extend the scope.
 - **Never pool across bit widths or evaluation sets.** `gamma = 5.4967` puts
   INT4 and INT3 far apart, and a disagreement between eval sets is itself the
   finding. Four fits, reported separately.
-- **Smoke runs write to a different file.** `--max-windows` changes the number;
-  a smoke row sitting beside full rows in `data/k6.jsonl` is indistinguishable
-  from a real measurement afterwards.
+- **There is no cheap smoke run, so do not budget for one.** `--max-windows`
+  shortens only the perplexity pass; GPTQ still runs all 32 layers, which is
+  essentially the entire cost. Treat the first checkpoint of the real ladder as
+  the smoke test. If an isolated cell is ever needed, send it to a different
+  file: `--max-windows` changes the number without changing the resume key, so
+  such a row must never sit in `data/k6.jsonl` beside full ones.
 - **Only `stage1` checkpoints.** Stages 2 and 3 change the data mixture, which
   confounds `D` with composition.
 - **Do not invent a token-per-step conversion.** Steps are used deliberately:
@@ -43,9 +46,6 @@ uv run pytest                 # no GPU needed; logic only
 uv run fertprec doctor        # imports + GPU, before anything is downloaded
 uv run fertprec k6 --verify   # all eight frozen branches still on the Hub?
 uv run fertprec k6 --dry-run  # what would run, what is cached
-# smoke, to a separate file:
-uv run fertprec k6 --steps 70000 --bits 4 --eval-sets wikitext2 \
-                   --max-windows 8 --out data/k6_smoke.jsonl
 uv run fertprec k6 --gpu 0 --out data/k6.jsonl
 uv run fertprec analyse --out data/k6.jsonl
 ```
