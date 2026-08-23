@@ -116,6 +116,9 @@ def run(out: pathlib.Path, steps=None, bits=BITS, eval_sets=EVAL_SETS,
     t0 = time.time()
     done = load_done(out)
     prov = provenance.collect()
+    # Re-read thermal state per checkpoint rather than once per run: a ladder
+    # takes many hours and the machine it starts on is not the machine it
+    # finishes on, thermally speaking.
     cells = plan(steps, bits, eval_sets)
     todo = [c for c in cells if c.key() not in done]
     _stamp(f"{len(cells)} cells, {len(cells) - len(todo)} cached, "
@@ -176,7 +179,8 @@ def run(out: pathlib.Path, steps=None, bits=BITS, eval_sets=EVAL_SETS,
                           dq_loss=q["nll"] - bf16[e]["nll"],
                           nll_bf16=bf16[e]["nll"], nll_quant=q["nll"],
                           n_windows=q["n_windows"], n_tokens=q["n_tokens"],
-                          key=cell.key(), prov=prov,
+                          key=cell.key(),
+                          prov={**prov, "thermal": provenance.thermal_state()},
                           t_snapshot=t_snap, t_bf16=t_bf16,
                           t_quantize=t_quant,
                           t_eval_quant=time.time() - t_eval)

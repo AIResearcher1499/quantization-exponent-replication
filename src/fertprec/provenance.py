@@ -41,6 +41,35 @@ def gpu_info() -> dict[str, Any]:
         return {"gpu": None, "n_gpu": 0}
 
 
+def thermal_state() -> dict[str, Any]:
+    """Temperature, power draw and active throttle reasons, per GPU.
+
+    Recorded, never acted on. Nothing in this project is scored on time, so
+    throttling cannot change a result -- but sustained overheating can produce
+    silent computation errors, and if a row ever looks wrong this is the
+    difference between diagnosing it and guessing. Reacting to temperature in
+    code would instead make behaviour depend on the machine room, which a
+    pre-registered experiment must not do.
+    """
+    try:
+        out = subprocess.run(
+            ["nvidia-smi",
+             "--query-gpu=index,temperature.gpu,power.draw,"
+             "clocks_throttle_reasons.active",
+             "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=15)
+    except (OSError, subprocess.SubprocessError):
+        return {}
+    rows = {}
+    for line in out.stdout.strip().splitlines():
+        parts = [x.strip() for x in line.split(",")]
+        if len(parts) != 4:
+            continue
+        rows[f"gpu{parts[0]}"] = {"temp_c": parts[1], "power_w": parts[2],
+                                  "throttle": parts[3]}
+    return rows
+
+
 def collect() -> dict[str, Any]:
     info: dict[str, Any] = {
         "host": platform.node(),
@@ -51,4 +80,5 @@ def collect() -> dict[str, Any]:
     info.update(gpu_info())
     for mod in ("torch", "transformers", "datasets", "gptqmodel", "accelerate"):
         info[f"v_{mod}"] = _version(mod)
+    info["thermal"] = thermal_state()
     return info
