@@ -1,7 +1,7 @@
 [project]
 name = "fertprec"
 version = "0.1.0"
-description = "Does tokenizer fertility set where each language sits on the over-training axis?"
+description = "Does a published quantization scaling exponent replicate?"
 readme = "README.md"
 requires-python = ">=3.11,<3.13"
 dependencies = []

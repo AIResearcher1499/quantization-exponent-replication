@@ -82,6 +82,7 @@ def main(argv: list[str] | None = None) -> int:
     an = sub.add_parser("analyse", help="apply the frozen K6 decision rule")
     an.add_argument("--out", default="data/k6.jsonl")
 
+
     sub.add_parser("doctor", help="check the environment before downloading anything")
 
     args = ap.parse_args(sys.argv[1:] if argv is None else argv)
@@ -93,6 +94,7 @@ def main(argv: list[str] | None = None) -> int:
         from . import k6 as k6mod
         print(json.dumps(k6mod.analyse(pathlib.Path(args.out)), indent=2))
         return 0
+
 
     from . import checkpoints
     from . import k6 as k6mod

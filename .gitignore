@@ -11,3 +11,7 @@ data/*.jsonl
 data/traces/
 data/raw/
 data/_quant/
+
+# Frozen result sets ARE tracked: 32 rows is 6 KB, it is the only copy of many
+# GPU-hours, and a summary derived from it is not a substitute for the rows.
+!results/
