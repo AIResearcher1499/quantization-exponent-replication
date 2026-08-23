@@ -80,6 +80,12 @@ present. Killing a job loses at most the checkpoint in progress.
 - **Disk fills.** Each revision is a full 7B checkpoint; the ladder pulls
   ~110 GB. Clear the Hub cache between checkpoints if needed — the results file
   is what matters, not the weights.
+- **`Expected all tensors to be on the same device, cuda:0 and cpu`.** GPTQ
+  moves only the Linear layers it quantizes onto the GPU and leaves norms,
+  embeddings and rotary buffers on CPU, so the returned model is a hybrid.
+  `quantize.consolidate()` moves everything and then verifies; if it raises
+  with a list of tensor names, report them rather than working around it by
+  moving inputs to CPU — that would measure a different computation.
 - **A branch is missing.** Stop. Do not substitute a nearby step: the ladder is
   frozen in the pre-registration. Report which step is gone.
 

@@ -78,3 +78,37 @@ def quantize_gptq(local_path: str, bits: int, calib: list[dict],
     if out_dir:
         model.save(out_dir)
     return model
+
+
+def consolidate(module, device: str):
+    """Put every parameter and buffer of a quantized model on one device.
+
+    GPTQ only moves the Linear layers it is quantizing onto the GPU; norms,
+    embeddings and rotary buffers can be left on CPU. The returned model is
+    therefore a hybrid, and feeding it CUDA inputs fails inside RMSNorm with
+    "expected all tensors to be on the same device".
+
+    Moving is not enough on its own -- anything left behind afterwards is a
+    silent hazard rather than a crash, since a stray buffer might still
+    broadcast correctly and quietly change a number. So this verifies, and
+    raises with the offending names rather than continuing.
+    """
+    import torch
+
+    module.to(device)
+    dev = torch.device(device)
+    if dev.type == "cuda" and dev.index is None:
+        dev = torch.device("cuda", torch.cuda.current_device())
+
+    stray = {}
+    for name, t in list(module.named_parameters()) + list(module.named_buffers()):
+        if t.device.type != dev.type or (
+                t.device.type == "cuda" and t.device.index != dev.index):
+            stray[name] = str(t.device)
+    if stray:
+        shown = ", ".join(f"{n}={d}" for n, d in list(stray.items())[:6])
+        raise RuntimeError(
+            f"{len(stray)} tensors are not on {dev} after moving: {shown}"
+            + (" ..." if len(stray) > 6 else "")
+            + ". Refusing to measure a model split across devices.")
+    return module

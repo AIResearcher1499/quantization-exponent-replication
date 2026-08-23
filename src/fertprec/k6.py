@@ -213,6 +213,8 @@ def run(out: pathlib.Path, steps=None, bits=BITS, eval_sets=EVAL_SETS,
             qmodel = quantize.quantize_gptq(local, b, calib)
             t_quant = time.time() - t
             _stamp(f"  int{b} quantized ({t_quant / 60:.1f}m)", t0)
+            # GPTQ returns a model with non-quantized modules still on CPU.
+            quantize.consolidate(qmodel.model, device)
             t_eval = time.time()
             for e in windows:
                 cell = Cell(step=step, bits=b, eval_set=e)
