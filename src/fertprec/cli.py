@@ -8,6 +8,53 @@ import pathlib
 import sys
 
 
+def doctor() -> int:
+    """Import every dependency the run needs, then report the GPU.
+
+    Exists because the expensive failures happen after a 14 GB download: an
+    import that resolves lazily inside `transformers` or `gptqmodel` will not
+    fail until a model is loaded. Running this first turns a two-hour discovery
+    into a two-second one.
+    """
+    import importlib
+
+    ok = True
+    checks = [
+        ("torch", None),
+        ("torchvision", "transformers imports it on some paths, text-only or not"),
+        ("transformers", None),
+        ("datasets", None),
+        ("gptqmodel", "quantization backend"),
+        ("huggingface_hub", None),
+    ]
+    for mod, note in checks:
+        try:
+            m = importlib.import_module(mod)
+            ver = getattr(m, "__version__", "?")
+            print(f"  ok      {mod:<16} {ver}")
+        except Exception as exc:
+            ok = False
+            print(f"  MISSING {mod:<16} {type(exc).__name__}: {exc}"
+                  + (f"  ({note})" if note else ""))
+
+    try:
+        import torch
+        if torch.cuda.is_available():
+            for i in range(torch.cuda.device_count()):
+                free, total = torch.cuda.mem_get_info(i)
+                print(f"  gpu {i}: {torch.cuda.get_device_name(i)} "
+                      f"{free/2**30:.1f}/{total/2**30:.1f} GiB free")
+        else:
+            print("  no CUDA device visible -- the ladder needs one")
+            ok = False
+    except Exception as exc:
+        print(f"  gpu check failed: {exc}")
+        ok = False
+
+    print("\nready" if ok else "\nnot ready -- fix the above before running k6")
+    return 0 if ok else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="fertprec")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -27,7 +74,12 @@ def main(argv: list[str] | None = None) -> int:
     an = sub.add_parser("analyse", help="apply the frozen K6 decision rule")
     an.add_argument("--out", default="data/k6.jsonl")
 
+    sub.add_parser("doctor", help="check the environment before downloading anything")
+
     args = ap.parse_args(sys.argv[1:] if argv is None else argv)
+
+    if args.cmd == "doctor":
+        return doctor()
 
     if args.cmd == "analyse":
         from . import k6 as k6mod

@@ -25,12 +25,15 @@ and still fits in 48 GB.
 ## Before a long run
 
 ```bash
+uv run fertprec doctor             # imports resolve? GPU visible?
 uv run fertprec k6 --verify        # every frozen branch still exists?
 uv run fertprec k6 --dry-run       # what would run, what is already cached
 ```
 
-`--verify` matters: a branch that disappeared is cheap to discover now and
-expensive to discover eight hours in.
+`doctor` and `--verify` matter for the same reason: both failures are cheap now
+and expensive eight hours in. `doctor` in particular catches lazily-resolved
+imports -- `transformers` pulls in torchvision on some paths even for text-only
+models, and that error would otherwise surface only after a 14 GB download.
 
 ## Smoke first
 

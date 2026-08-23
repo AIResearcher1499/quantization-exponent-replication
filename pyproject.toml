@@ -30,6 +30,10 @@ gpu = [
     "gptqmodel>=2.0",
     "huggingface_hub>=0.26",
     "torch>=2.5",
+    # transformers reaches into torchvision on some import paths even for
+    # text-only models; without it the run dies at model load, after the
+    # checkpoint has already been downloaded.
+    "torchvision",
     "transformers>=4.51",
 ]
 # Analysis: the frozen mixed-effects fit in docs/prereg-g0.md §4.

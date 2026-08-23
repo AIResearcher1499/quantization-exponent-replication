@@ -39,7 +39,8 @@ fitted on? It answers that and nothing else. Do not extend the scope.
 Order matters, and skipping it costs hours:
 
 ```bash
-uv run pytest                 # no GPU needed; verifies the environment
+uv run pytest                 # no GPU needed; logic only
+uv run fertprec doctor        # imports + GPU, before anything is downloaded
 uv run fertprec k6 --verify   # all eight frozen branches still on the Hub?
 uv run fertprec k6 --dry-run  # what would run, what is cached
 # smoke, to a separate file:
@@ -54,6 +55,10 @@ present. Killing a job loses at most the checkpoint in progress.
 
 ## When something breaks
 
+- **`No module named torchvision`.** `transformers` reaches into torchvision on
+  some import paths even for text-only models. Install it (`uv pip install
+  torchvision`) or reinstall the extras. `fertprec doctor` catches this before
+  a checkpoint is downloaded, which is the whole reason it exists.
 - **`gptqmodel` does not recognise the architecture.** Most likely failure, and
   the reason the smoke run exists. Check `transformers` is new enough to load
   `Olmo3ForCausalLM`, and that `trust_remote_code=True` reaches both the loader
