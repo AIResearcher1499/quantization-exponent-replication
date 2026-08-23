@@ -156,3 +156,31 @@ def test_unknown_index_is_refused(monkeypatch):
         assert "not found" in str(exc)
     else:
         raise AssertionError("unknown index should be refused")
+
+
+# --- concurrent runs ---------------------------------------------------------
+
+def test_second_process_on_the_same_steps_is_refused(tmp_path):
+    out = tmp_path / "k6.jsonl"
+    k6.acquire_lock(out, [70000, 108000])
+    try:
+        k6.acquire_lock(out, [108000, 165000])   # overlaps on 108000
+    except SystemExit as exc:
+        assert "108000" in str(exc)
+    else:
+        raise AssertionError("overlapping steps should be refused")
+
+
+def test_disjoint_steps_are_allowed(tmp_path):
+    """Splitting the ladder across two cards must stay possible."""
+    out = tmp_path / "k6.jsonl"
+    k6.acquire_lock(out, [70000, 108000])
+    k6.acquire_lock(out, [390000, 599000])       # different cards, no overlap
+
+
+def test_stale_lock_from_a_dead_process_does_not_block(tmp_path):
+    import json as _json
+    out = tmp_path / "k6.jsonl"
+    lock = out.with_suffix(out.suffix + ".lock")
+    lock.write_text(_json.dumps({"pid": 999999999, "steps": [70000]}))
+    k6.acquire_lock(out, [70000])                # must not raise

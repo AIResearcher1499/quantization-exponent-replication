@@ -75,6 +75,50 @@ def _stamp(msg: str, t0: float) -> None:
     print(f"[{time.strftime('%H:%M:%S')} +{el/60:6.1f}m] {msg}", flush=True)
 
 
+class AlreadyRunning(SystemExit):
+    pass
+
+
+def acquire_lock(out: pathlib.Path, steps: list[int]) -> pathlib.Path:
+    """Refuse to start if another process is writing the same cells.
+
+    Two processes started on the same output file both read it as empty, run
+    the same cells, and append duplicate rows -- while sharing one card. The
+    duplicates are not obviously wrong afterwards, which is what makes this
+    worth preventing rather than detecting.
+
+    Splitting a ladder across two cards stays legal: the lock is per
+    (output file, step), so disjoint `--steps` never collide.
+    """
+    import os
+
+    lock = out.with_suffix(out.suffix + ".lock")
+    if lock.exists():
+        try:
+            held = json.loads(lock.read_text())
+        except (json.JSONDecodeError, OSError):
+            held = None
+        if held:
+            alive = True
+            try:
+                os.kill(held["pid"], 0)
+            except (ProcessLookupError, PermissionError, TypeError):
+                alive = held.get("pid") is None
+            overlap = sorted(set(held.get("steps", [])) & set(steps))
+            if alive and overlap:
+                raise AlreadyRunning(
+                    f"pid {held['pid']} is already running steps {overlap} "
+                    f"into {out}.\n"
+                    f"Two processes on the same cells duplicate rows and share "
+                    f"one card.\n"
+                    f"Use disjoint --steps, a different --out, or stop that "
+                    f"process.\n"
+                    f"If it is dead, remove {lock}")
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    lock.write_text(json.dumps({"pid": os.getpid(), "steps": sorted(steps)}))
+    return lock
+
+
 def load_done(out: pathlib.Path) -> dict[str, dict]:
     if not out.exists():
         return {}
@@ -114,6 +158,7 @@ def run(out: pathlib.Path, steps=None, bits=BITS, eval_sets=EVAL_SETS,
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
     t0 = time.time()
+    lock = acquire_lock(out, list(steps or checkpoints.STEPS))
     done = load_done(out)
     prov = provenance.collect()
     # Re-read thermal state per checkpoint rather than once per run: a ladder
@@ -190,6 +235,8 @@ def run(out: pathlib.Path, steps=None, bits=BITS, eval_sets=EVAL_SETS,
             del qmodel
             gc.collect()
             torch.cuda.empty_cache()
+
+    lock.unlink(missing_ok=True)
 
 
 def analyse(out: pathlib.Path) -> dict:
