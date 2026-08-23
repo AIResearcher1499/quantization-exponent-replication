@@ -62,6 +62,13 @@ quantized perplexity passes). Expect **10-14 hours** on one A6000, dominated by
 GPTQ. Also budget **~110 GB of downloads** — each revision is a full 7B
 checkpoint — and disk for the Hub cache.
 
+### Pin the process to one large card, always
+
+The backend uses every visible CUDA device. On a machine with a small auxiliary
+GPU that means an OOM on the small one and a silent CPU fallback for the
+Hessian inverse, which makes layers within a single model incomparable. Check
+with `nvidia-smi`, then pin.
+
 ### Using both cards
 
 The cells are independent per checkpoint, so split the ladder:

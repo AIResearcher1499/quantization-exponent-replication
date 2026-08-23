@@ -64,8 +64,14 @@ present. Killing a job loses at most the checkpoint in progress.
   `Olmo3ForCausalLM`, and that `trust_remote_code=True` reaches both the loader
   and the tokenizer. Report the exact error rather than switching quantization
   backends: a different backend is a different measurement.
-- **Out of memory during quantization.** BF16 weights are ~14 GB and GPTQ needs
-  headroom above that. Run one checkpoint per card, not two.
+- **Out of memory during quantization, or a CPU fallback warning.** The backend
+  spreads the model across every *visible* CUDA device. If a small GPU is
+  visible it will OOM there and fall back to CPU for the Hessian inverse, which
+  is not merely slow: layers then differ in how they were quantized, within one
+  model, depending on where the OOM landed. Always pin the process with
+  `CUDA_VISIBLE_DEVICES` to a single large card, and run `fertprec doctor`
+  first -- it refuses to report ready while a sub-20 GiB device is visible.
+  Any run that logged a CPU fallback must be discarded, not resumed.
 - **Disk fills.** Each revision is a full 7B checkpoint; the ladder pulls
   ~110 GB. Clear the Hub cache between checkpoints if needed — the results file
   is what matters, not the weights.

@@ -39,11 +39,34 @@ def doctor() -> int:
 
     try:
         import torch
+        MIN_GIB = 20.0
         if torch.cuda.is_available():
+            small = []
             for i in range(torch.cuda.device_count()):
                 free, total = torch.cuda.mem_get_info(i)
+                tot_gib = total / 2**30
+                mark = "" if tot_gib >= MIN_GIB else "   <-- TOO SMALL"
                 print(f"  gpu {i}: {torch.cuda.get_device_name(i)} "
-                      f"{free/2**30:.1f}/{total/2**30:.1f} GiB free")
+                      f"{free/2**30:.1f}/{tot_gib:.1f} GiB free{mark}")
+                if tot_gib < MIN_GIB:
+                    small.append(i)
+            if small:
+                ok = False
+                print(f"\n  gpu {small} are below {MIN_GIB:.0f} GiB and are visible to "
+                      f"this process.\n"
+                      "  The quantization backend spreads the model across every "
+                      "visible device,\n"
+                      "  runs out of memory on the small one, and silently falls "
+                      "back to CPU for\n"
+                      "  the Hessian inverse. That is not just slow: some layers "
+                      "then get a\n"
+                      "  CPU-computed inverse and others a GPU one, within the same "
+                      "model, and\n"
+                      "  which layers depends on where the OOM happened. Across a "
+                      "ladder of\n"
+                      "  checkpoints that is a confound sitting directly on the "
+                      "measurement.\n"
+                      "  Restrict the process, e.g. CUDA_VISIBLE_DEVICES=0")
         else:
             print("  no CUDA device visible -- the ladder needs one")
             ok = False
