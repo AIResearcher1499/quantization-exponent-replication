@@ -1,0 +1,46 @@
+[project]
+name = "fertprec"
+version = "0.1.0"
+description = "Does tokenizer fertility set where each language sits on the over-training axis?"
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+dependencies = []
+
+[project.scripts]
+fertprec = "fertprec.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project.optional-dependencies]
+# Fertility / corpus statistics only: runs on a Mac, no GPU.
+fertility = [
+    "datasets>=3.0",
+    "tokenizers>=0.20",
+    "transformers>=4.40",
+]
+# GPU stage (K6, G0). Record the resolved versions in provenance -- INT3
+# support in gptqmodel has moved between releases, and a kernel change between
+# the BF16 and quantized halves of a comparison is indistinguishable from the
+# effect being measured. See docs/k6-runbook.md.
+gpu = [
+    "accelerate>=1.1",
+    "datasets>=3.0",
+    "gptqmodel>=2.0",
+    "huggingface_hub>=0.26",
+    "torch>=2.5",
+    "transformers>=4.51",
+]
+# Analysis: the frozen mixed-effects fit in docs/prereg-g0.md §4.
+stats = [
+    "lang2vec>=1.0",
+    "pandas>=2.0",
+    "statsmodels>=0.14",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.0"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]

@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.DS_Store
+*.egg-info/
+
+# Generated experiment data. Summaries are small and are kept; per-item rows
+# and raw traces are not.
+data/*.jsonl
+data/traces/
+data/raw/
