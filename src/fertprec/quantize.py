@@ -80,6 +80,29 @@ def quantize_gptq(local_path: str, bits: int, calib: list[dict],
     return model
 
 
+def load_quantized(path: str, device: str):
+    """Load a saved quantized model onto one device.
+
+    Quantizing and evaluating in the same process leaves parts of the model on
+    the meta device -- shapes without data -- and `.to()` cannot move those.
+    The error message suggests `to_empty()`; that would silently fill the model
+    with uninitialised weights and measure garbage without crashing, so it must
+    never be used here.
+
+    Saving and reloading costs a minute and a few GB of scratch, and returns a
+    model that is simply complete. It also means a failure during evaluation no
+    longer throws away the quantization that preceded it.
+    """
+    from gptqmodel import GPTQModel
+
+    for kwargs in ({"device": device}, {"device_map": {"": device}}, {}):
+        try:
+            return GPTQModel.load(path, trust_remote_code=True, **kwargs)
+        except TypeError:
+            continue
+    raise RuntimeError(f"could not load quantized model from {path}")
+
+
 def consolidate(module, device: str):
     """Put every parameter and buffer of a quantized model on one device.
 
@@ -94,6 +117,15 @@ def consolidate(module, device: str):
     raises with the offending names rather than continuing.
     """
     import torch
+
+    meta = [n for n, t in list(module.named_parameters())
+            + list(module.named_buffers()) if t.device.type == "meta"]
+    if meta:
+        raise RuntimeError(
+            f"{len(meta)} tensors are on the meta device (e.g. {meta[:3]}). "
+            "They hold no data, so moving them would require to_empty(), which "
+            "fills them with uninitialised values and would measure garbage. "
+            "Save the quantized model and load it back instead.")
 
     module.to(device)
     dev = torch.device(device)

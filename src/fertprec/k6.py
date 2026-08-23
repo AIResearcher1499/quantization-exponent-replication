@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import json
 import pathlib
+import shutil
+import tempfile
 import time
 from dataclasses import asdict, dataclass, field
 from typing import Any
@@ -210,10 +212,19 @@ def run(out: pathlib.Path, steps=None, bits=BITS, eval_sets=EVAL_SETS,
                 _stamp(f"  calibration: {len(calib)} sequences "
                        f"({(time.time() - t) / 60:.1f}m)", t0)
             t = time.time()
-            qmodel = quantize.quantize_gptq(local, b, calib)
+            # Scratch beside the results file, not in /tmp: a quantized 7B is
+            # 3-5 GB and /tmp is often tmpfs, i.e. RAM.
+            scratch = out.parent / "_quant"
+            scratch.mkdir(parents=True, exist_ok=True)
+            qdir = tempfile.mkdtemp(prefix=f"q{b}-{step}-", dir=str(scratch))
+            quantize.quantize_gptq(local, b, calib, out_dir=qdir)
             t_quant = time.time() - t
             _stamp(f"  int{b} quantized ({t_quant / 60:.1f}m)", t0)
-            # GPTQ returns a model with non-quantized modules still on CPU.
+            gc.collect()
+            torch.cuda.empty_cache()
+            # Reload from disk: quantizing in-process leaves part of the model
+            # on the meta device, which cannot be moved without destroying it.
+            qmodel = quantize.load_quantized(qdir, device)
             quantize.consolidate(qmodel.model, device)
             t_eval = time.time()
             for e in windows:
@@ -237,6 +248,7 @@ def run(out: pathlib.Path, steps=None, bits=BITS, eval_sets=EVAL_SETS,
             del qmodel
             gc.collect()
             torch.cuda.empty_cache()
+            shutil.rmtree(qdir, ignore_errors=True)
 
     lock.unlink(missing_ok=True)
 

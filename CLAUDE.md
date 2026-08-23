@@ -78,7 +78,8 @@ present. Killing a job loses at most the checkpoint in progress.
   **Any run that logged a CPU fallback must be discarded, not resumed** -- its
   layers were not all quantized the same way.
 - **Disk fills.** Each revision is a full 7B checkpoint; the ladder pulls
-  ~110 GB. Clear the Hub cache between checkpoints if needed — the results file
+  ~110 GB, plus 3-5 GB of scratch under `data/_quant/` while a quantized model
+  is written and reloaded (it is removed after each cell). Clear the Hub cache between checkpoints if needed — the results file
   is what matters, not the weights.
 - **`Expected all tensors to be on the same device, cuda:0 and cpu`.** GPTQ
   moves only the Linear layers it quantizes onto the GPU and leaves norms,

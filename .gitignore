@@ -10,3 +10,4 @@ __pycache__/
 data/*.jsonl
 data/traces/
 data/raw/
+data/_quant/

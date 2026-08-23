@@ -215,3 +215,19 @@ def test_consolidate_reports_tensors_left_behind():
     # on a CPU-only machine every tensor is already on cpu, so the guard
     # passing here is the correct outcome; the CUDA path is exercised on the
     # GPU box, where a stray tensor raises with its name.
+
+
+def test_meta_tensors_are_refused_not_emptied():
+    """to_empty() would fill the model with uninitialised weights and measure
+    garbage without crashing. The guard must stop before that."""
+    torch = pytest.importorskip("torch")
+    from fertprec import quantize as qz
+
+    m = torch.nn.Linear(4, 4, device="meta")
+    try:
+        qz.consolidate(m, "cpu")
+    except RuntimeError as exc:
+        assert "meta device" in str(exc)
+        assert "to_empty" in str(exc)
+    else:
+        raise AssertionError("meta tensors must be refused")
