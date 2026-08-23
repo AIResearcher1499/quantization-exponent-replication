@@ -54,7 +54,13 @@ uv run fertprec analyse --out data/k6.jsonl
 Pass an explicit index to split the ladder across two cards.
 
 The run is resumable: rows are appended and a restart skips what is already
-present. Killing a job loses at most the checkpoint in progress.
+present. Killing a job, or hard-resetting the machine, loses at most the cell
+in progress. On restart the lock left by a dead process is recognised as stale,
+and scratch from an interrupted quantization is cleared before anything new is
+written.
+
+`--dry-run` prints CACHED/RUN per cell, which is the quickest way to see how
+far a ladder got.
 
 ## When something breaks
 
