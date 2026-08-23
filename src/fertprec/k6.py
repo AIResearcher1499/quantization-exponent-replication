@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import time
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
@@ -54,7 +55,24 @@ class Row:
     n_windows: int
     n_tokens: int
     key: str
+    # Wall-clock, seconds. Recorded for planning only -- nothing in the
+    # pre-registration is scored on time, and these numbers are
+    # hardware-dependent so they must never be compared across machines.
+    t_snapshot: float = 0.0
+    t_bf16: float = 0.0
+    t_quantize: float = 0.0
+    t_eval_quant: float = 0.0
     prov: dict[str, Any] = field(default_factory=dict)
+
+
+def _stamp(msg: str, t0: float) -> None:
+    """Print with an absolute clock time and elapsed-since-start.
+
+    A long run is unattended; knowing that a phase took 40 minutes matters more
+    afterwards than watching it happen.
+    """
+    el = time.time() - t0
+    print(f"[{time.strftime('%H:%M:%S')} +{el/60:6.1f}m] {msg}", flush=True)
 
 
 def load_done(out: pathlib.Path) -> dict[str, dict]:
@@ -95,12 +113,13 @@ def run(out: pathlib.Path, steps=None, bits=BITS, eval_sets=EVAL_SETS,
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
+    t0 = time.time()
     done = load_done(out)
     prov = provenance.collect()
     cells = plan(steps, bits, eval_sets)
     todo = [c for c in cells if c.key() not in done]
-    print(f"{len(cells)} cells, {len(cells) - len(todo)} cached, {len(todo)} to run",
-          flush=True)
+    _stamp(f"{len(cells)} cells, {len(cells) - len(todo)} cached, "
+           f"{len(todo)} to run", t0)
 
     tok = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
     windows = {}
@@ -108,33 +127,45 @@ def run(out: pathlib.Path, steps=None, bits=BITS, eval_sets=EVAL_SETS,
         if any(c.eval_set == e for c in todo):
             windows[e] = ppl.make_windows(ppl.load_eval_text(e), tok,
                                           max_windows=max_windows)
-            print(f"eval {e}: {windows[e].size(0)} windows", flush=True)
+            _stamp(f"eval {e}: {windows[e].size(0)} windows", t0)
 
     calib = None
     for step in sorted({c.step for c in todo}):
         rev = checkpoints.revision(step)
-        print(f"\n=== step {step} ({rev})", flush=True)
+        _stamp(f"=== step {step} ({rev})", t0)
 
         # One local snapshot per checkpoint, shared by the BF16 and quantized
         # loads, so both are provably the same weights.
+        t = time.time()
         local = quantize.snapshot(model_id, rev)
+        t_snap = time.time() - t
+        _stamp(f"  snapshot ready ({t_snap / 60:.1f}m)", t0)
 
+        t = time.time()
         base = AutoModelForCausalLM.from_pretrained(
             local, torch_dtype=torch.bfloat16,
             device_map=device, trust_remote_code=True)
         bf16 = {e: ppl.perplexity(base, windows[e], device=device)
                 for e in windows}
+        t_bf16 = time.time() - t
         for e, v in bf16.items():
-            print(f"  bf16 {e}: ppl={v['ppl']:.4f}", flush=True)
+            _stamp(f"  bf16 {e}: ppl={v['ppl']:.4f}", t0)
+        _stamp(f"  bf16 total ({t_bf16 / 60:.1f}m)", t0)
         del base
         gc.collect()
         torch.cuda.empty_cache()
 
         for b in sorted({c.bits for c in todo if c.step == step}, reverse=True):
             if calib is None:
+                t = time.time()
                 calib = quantize.build_calibration(tok)
-                print(f"  calibration: {len(calib)} sequences", flush=True)
+                _stamp(f"  calibration: {len(calib)} sequences "
+                       f"({(time.time() - t) / 60:.1f}m)", t0)
+            t = time.time()
             qmodel = quantize.quantize_gptq(local, b, calib)
+            t_quant = time.time() - t
+            _stamp(f"  int{b} quantized ({t_quant / 60:.1f}m)", t0)
+            t_eval = time.time()
             for e in windows:
                 cell = Cell(step=step, bits=b, eval_set=e)
                 if cell.key() in done:
@@ -145,10 +176,13 @@ def run(out: pathlib.Path, steps=None, bits=BITS, eval_sets=EVAL_SETS,
                           dq_loss=q["nll"] - bf16[e]["nll"],
                           nll_bf16=bf16[e]["nll"], nll_quant=q["nll"],
                           n_windows=q["n_windows"], n_tokens=q["n_tokens"],
-                          key=cell.key(), prov=prov)
+                          key=cell.key(), prov=prov,
+                          t_snapshot=t_snap, t_bf16=t_bf16,
+                          t_quantize=t_quant,
+                          t_eval_quant=time.time() - t_eval)
                 append_row(out, asdict(row))
-                print(f"  int{b} {e}: ppl={q['ppl']:.4f} dqLoss={row.dq_loss:+.5f}",
-                      flush=True)
+                _stamp(f"  int{b} {e}: ppl={q['ppl']:.4f} "
+                       f"dqLoss={row.dq_loss:+.5f}", t0)
             del qmodel
             gc.collect()
             torch.cuda.empty_cache()
