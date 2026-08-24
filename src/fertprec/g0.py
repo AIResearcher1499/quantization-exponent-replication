@@ -80,6 +80,9 @@ def run(out: pathlib.Path, model_keys=None, langs=None, bits=BITS,
     langs = langs or list(corpus.LANGS)
 
     t0 = time.time()
+    # Before anything expensive: a missing corpus should not surface after a
+    # 30 GB model download.
+    corpus.ensure_flores()
     # Lock on model keys, not a hash of them: the refusal message has to name
     # what is already running for it to be actionable.
     lock = acquire_lock(out, list(model_keys))

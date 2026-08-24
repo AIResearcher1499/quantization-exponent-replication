@@ -37,6 +37,16 @@ def doctor() -> int:
             print(f"  MISSING {mod:<16} {type(exc).__name__}: {exc}"
                   + (f"  ({note})" if note else ""))
 
+    try:
+        from . import corpus
+        n = (len(list(corpus.FLORES.glob("*.devtest")))
+             if corpus.FLORES.is_dir() else 0)
+        print(f"  {'ok     ' if n else 'MISSING'} FLORES-200      "
+              + (f"{n} languages" if n
+                 else "will be fetched on first run (~25 MB)"))
+    except Exception as exc:
+        print(f"  corpus check failed: {exc}")
+
     from . import gpu as gpumod
 
     gpus = gpumod.list_gpus()

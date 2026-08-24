@@ -48,8 +48,44 @@ def wiki_text(lang: str, max_bytes: int) -> str:
     return raw[:max_bytes].decode("utf-8", errors="ignore")
 
 
+FLORES_URL = "https://dl.fbaipublicfiles.com/nllb/flores200_dataset.tar.gz"
+
+
+def ensure_flores() -> pathlib.Path:
+    """Download and unpack FLORES-200 if it is not already present.
+
+    Public, ungated, ~25 MB. Fetching it automatically is worth a small amount
+    of magic: the alternative is a run that dies on the first language after
+    the model has already been downloaded, which is what happened once.
+    """
+    if FLORES.is_dir() and any(FLORES.glob("*.devtest")):
+        return FLORES
+
+    import tarfile
+    import urllib.request
+
+    dest = ROOT / "data" / "raw"
+    dest.mkdir(parents=True, exist_ok=True)
+    tarball = dest / "flores200.tar.gz"
+    if not tarball.exists():
+        print(f"downloading FLORES-200 ({FLORES_URL}) ...", flush=True)
+        urllib.request.urlretrieve(FLORES_URL, tarball)
+    print(f"unpacking into {dest} ...", flush=True)
+    with tarfile.open(tarball) as tf:
+        tf.extractall(dest)
+    if not (FLORES.is_dir() and any(FLORES.glob("*.devtest"))):
+        raise RuntimeError(f"FLORES unpacked but {FLORES} is not where expected")
+    print(f"FLORES-200 ready: {len(list(FLORES.glob('*.devtest')))} languages",
+          flush=True)
+    return FLORES
+
+
 def flores_sentences(lang: str) -> list[str]:
     path = FLORES / f"{LANGS[lang]}.devtest"
+    if not path.exists():
+        raise FileNotFoundError(
+            f"{path} missing. Run `fertprec doctor`, or call "
+            "corpus.ensure_flores() to fetch it.")
     return [ln for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()]
 
 
