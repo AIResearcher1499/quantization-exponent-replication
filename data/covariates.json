@@ -1,0 +1,23 @@
+{
+  "data_share_proxy": {
+    "note": "Deliberately left empty: a number typed in from recollection would look identical to a sourced one in the regression.",
+    "source": "Common Crawl published language statistics; fill from the snapshot actually cited in the paper, not from memory",
+    "value": null
+  },
+  "typo_distance": {
+    "source": "URIEL via lang2vec; mean cosine distance to eng over syntax_knn and fam (language family) feature vectors",
+    "value": {
+      "bn": 0.6452818047418202,
+      "de": 0.27656348351658105,
+      "en": -1.1102230246251565e-16,
+      "es": 0.5410905447970537,
+      "fr": 0.5460104460220583,
+      "ja": 0.7499034935304723,
+      "ru": 0.5107896351211938,
+      "sw": 0.7630758430783047,
+      "te": 0.7397016034331843,
+      "th": 0.680318993454497,
+      "zh": 0.6438021941717258
+    }
+  }
+}

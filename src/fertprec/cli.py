@@ -82,6 +82,26 @@ def main(argv: list[str] | None = None) -> int:
     an = sub.add_parser("analyse", help="apply the frozen K6 decision rule")
     an.add_argument("--out", default="data/k6.jsonl")
 
+    try:
+        from . import g0 as _probe_g0  # noqa: F401
+        has_g0 = True
+    except ImportError:
+        has_g0 = False
+
+    g = sub.add_parser("g0", help="observational multilingual ladder") if has_g0 else None
+    if has_g0:
+        g.add_argument("--out", default="data/g0.jsonl")
+        g.add_argument("--models", default="", help="comma-separated model keys")
+        g.add_argument("--langs", default="")
+        g.add_argument("--bits", default="4,3")
+        g.add_argument("--gpu", default="auto")
+        g.add_argument("--device", default="cuda")
+        g.add_argument("--max-windows", type=int, default=None)
+        g.add_argument("--dry-run", action="store_true")
+
+        ga = sub.add_parser("analyse-g0", help="apply the frozen G0 decision rule")
+        ga.add_argument("--out", default="data/g0.jsonl")
+        ga.add_argument("--bits", type=int, default=4)
 
     sub.add_parser("doctor", help="check the environment before downloading anything")
 
@@ -95,6 +115,33 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(k6mod.analyse(pathlib.Path(args.out)), indent=2))
         return 0
 
+    if args.cmd == "analyse-g0":
+        from . import fit_g0
+        print(json.dumps(fit_g0.analyse(pathlib.Path(args.out), args.bits),
+                         indent=2, default=str))
+        return 0
+
+    if args.cmd == "g0":
+        if args.gpu != "off":
+            from . import gpu as gpumod
+            chosen = gpumod.pick(args.gpu)
+            if chosen is not None:
+                gpumod.restrict_to(chosen)
+                print(f"pinned to cuda:{chosen}")
+        from . import g0 as g0mod
+        mk = [m for m in args.models.split(",") if m] or None
+        lg = [l for l in args.langs.split(",") if l] or None
+        bits = tuple(int(b) for b in args.bits.split(","))
+        if args.dry_run:
+            done = __import__("fertprec.k6", fromlist=["k6"]).load_done(
+                pathlib.Path(args.out))
+            for c in g0mod.plan(mk, lg, bits):
+                mark = "CACHED" if c.key() in done else "RUN   "
+                print(f"  {mark} {c.model:<12} {c.lang:<3} int{c.bits}")
+            return 0
+        g0mod.run(pathlib.Path(args.out), model_keys=mk, langs=lg, bits=bits,
+                  device=args.device, max_windows=args.max_windows)
+        return 0
 
     from . import checkpoints
     from . import k6 as k6mod

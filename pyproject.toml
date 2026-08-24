@@ -1,7 +1,7 @@
 [project]
 name = "fertprec"
 version = "0.1.0"
-description = "Does a published quantization scaling exponent replicate?"
+description = "Does tokenizer fertility set where each language sits on the over-training axis?"
 readme = "README.md"
 requires-python = ">=3.11,<3.13"
 dependencies = []
@@ -36,7 +36,7 @@ gpu = [
     "torchvision",
     "transformers>=4.51",
 ]
-# Analysis: the frozen mixed-effects fit in docs/prereg-g0.md §4.
+# Analysis: the frozen mixed-effects fit in the (unpublished) G0 pre-registration §4.
 stats = [
     "lang2vec>=1.0",
     "pandas>=2.0",

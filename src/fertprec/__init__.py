@@ -1,6 +1,7 @@
-"""Replication check for a published quantization scaling exponent.
+"""fertility-precision: does tokenizer fertility set the per-language
+over-training point that governs quantization damage?
 
-See docs/prereg-k6.md for the protocol.
+Nothing here runs an experiment yet. See the (unpublished) idea lock.
 """
 
 __version__ = "0.1.0"
